@@ -1,0 +1,21 @@
+{
+  "name": "line-kcal-bot-vercel",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo build",
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.23.0",
+    "@supabase/supabase-js": "^2.75.1",
+    "dayjs": "^1.11.18",
+    "raw-body": "^2.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.8.1",
+    "@vercel/node": "^5.4.0",
+    "typescript": "^5.9.3"
+  }
+}
