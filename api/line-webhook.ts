@@ -21,7 +21,7 @@ const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
 const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
-const gemini = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }); // 1.5-flash is fine, 1.5-pro is also a good option
+const gemini = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' }); // 1.5-flash is fine, 1.5-pro is also a good option
 
 export const config = {
   api: { bodyParser: false },
