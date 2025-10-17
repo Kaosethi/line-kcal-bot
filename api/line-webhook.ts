@@ -115,39 +115,42 @@ async function uploadToSupabase(userId: string, buf: Buffer): Promise<string> {
 // ===================================================================
 
 async function analyzeImage(imageUrl: string) {
-  const SYSTEM = `You are a nutrition assistant for a LINE calorie bot in Thailand.
+  const SYSTEM = `You are a nutrition assistant. Analyze the food image.
+- If it is a dish, identify it.
+- If it is a branded product, identify the brand and product name.
+- If unsure, use "unknown".
 Return ONLY JSON matching:
 {"dish_name":"string","portion":"string","confidence":0.0}`;
 
-  // ---- START FIX ----
-  console.log(`[DEBUG] analyzeImage: Fetching image from ${imageUrl}`);
-  // 1. Fetch the image data from the public URL
-  const imageResponse = await fetch(imageUrl);
-  if (!imageResponse.ok) {
-    throw new Error(`Failed to fetch image from Supabase: ${imageResponse.status}`);
-  }
-  const imageBuffer = await imageResponse.arrayBuffer();
-  const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+  console.log(`[DEBUG] analyzeImage: Fetching image from ${imageUrl}`);
+  const imageResponse = await fetch(imageUrl);
+  if (!imageResponse.ok) {
+    throw new Error(`Failed to fetch image from Supabase: ${imageResponse.status}`);
+  }
+  const imageBuffer = await imageResponse.arrayBuffer();
+  const imageBase64 = Buffer.from(imageBuffer).toString('base64');
 
-  // 2. Construct the proper image part for Gemini
-  const imagePart = {
-    inlineData: {
-      data: imageBase64,
-      mimeType: 'image/jpeg', // Assuming all uploads are jpeg as per uploadToSupabase
-    },
-  };
+  const imagePart = {
+    inlineData: {
+      data: imageBase64,
+      mimeType: 'image/jpeg',
+    },
+  };
 
-  console.log('[DEBUG] analyzeImage: Calling Gemini with image...');
-  // 3. Update the generateContent call to send the image part
-  const result = await gemini.generateContent({
-    contents: [{ role: 'user', parts: [{ text: SYSTEM }, imagePart] }], // <-- Pass imagePart, not text
-  });
-  // ---- END FIX ----
+  console.log('[DEBUG] analyzeImage: Calling Gemini with image...');
+  const result = await gemini.generateContent({
+    contents: [{ role: 'user', parts: [{ text: SYSTEM }, imagePart] }],
+  });
 
   const out = result.response.text().trim();
-  console.log('[DEBUG] analyzeImage: Gemini raw response:', out); // Added log
+  console.log('[DEBUG] analyzeImage: Gemini raw response:', out);
 
-  const jsonText = out.startsWith('{') ? out : out.slice(out.indexOf('{'));
+  // ---- START FIX: Robust JSON Extraction ----
+  // This regex finds all text between the first { and the last }
+  const match = out.match(/{[\s\S]*}/); 
+  const jsonText = match ? match[0] : ''; // Get the matched JSON, or an empty string
+  // ---- END FIX ----
+  
   try {
     const j = JSON.parse(jsonText);
     return {
@@ -156,34 +159,38 @@ Return ONLY JSON matching:
       confidence: Number(j.confidence || 0),
     };
   } catch (e) {
-    console.error('[ERROR] analyzeImage: Failed to parse JSON.', e, 'Raw text was:', jsonText); // Added log
+    console.error('[ERROR] analyzeImage: Failed to parse JSON.', e, 'Raw text was:', jsonText);
     return { dish_name: 'unknown', portion: '', confidence: 0 };
   }
 }
 
-async function estimateNutrition(dishName: string) {
+async function estimateNutrition(dishName: string, portion?: string) {
   const key = matchDish(dishName);
   if (key) return { ...NUTRITION_MAP[key], source: `map:${key}` as const };
 
-  console.log(`[DEBUG] estimateNutrition: Calling Gemini for "${dishName}"`); // Added log
+  // This prompt now includes the portion for better accuracy
+  const prompt = `For "${dishName}" (${portion || 'typical one-serving'}), give JSON {kcal,protein_g,carbs_g,fat_g} numbers only.`;
+  
+  console.log(`[DEBUG] estimateNutrition: Calling Gemini for "${dishName}" (${portion})`);
+  
   const r = await gemini.generateContent({
     contents: [
       {
         role: 'user',
-        parts: [
-          {
-            text: `For "${dishName}", give JSON {kcal,protein_g,carbs_g,fat_g} numbers only, typical one-serving.`,
-          },
-        ],
-      },
+        parts: [{ text: prompt }], // Use the new prompt
+       },
     ],
   });
   let out = r.response.text().trim();
-  console.log('[DEBUG] estimateNutrition: Gemini raw response:', out); // Added log
+  console.log('[DEBUG] estimateNutrition: Gemini raw response:', out);
 
-  if (!out.startsWith('{')) out = out.slice(out.indexOf('{'));
+  // ---- START FIX: Robust JSON Extraction ----
+  const match = out.match(/{[\s\S]*}/); // Find text between { and }
+  const jsonText = match ? match[0] : '';
+  // ---- END FIX ----
+
   try {
-    const j = JSON.parse(out);
+    const j = JSON.parse(jsonText);
     return {
       kcal: Number(j.kcal ?? 500),
       protein_g: Number(j.protein_g ?? 20),
@@ -192,7 +199,7 @@ async function estimateNutrition(dishName: string) {
       source: 'gemini' as const,
     };
   } catch (e) {
-    console.error('[ERROR] estimateNutrition: Failed to parse JSON.', e, 'Raw text was:', out); // Added log
+    console.error('[ERROR] estimateNutrition: Failed to parse JSON.', e, 'Raw text was:', jsonText);
     return { kcal: 500, protein_g: 20, carbs_g: 60, fat_g: 18, source: 'default' as const };
   }
 }
@@ -278,7 +285,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const buf = await getLineImageBuffer(event.message.id);
             const imageUrl = await uploadToSupabase(userDbId, buf);
             const parsed = await analyzeImage(imageUrl);
-            const nutrition = await estimateNutrition(parsed.dish_name);
+            const nutrition = await estimateNutrition(parsed.dish_name, parsed.portion);
             const taken_at = dayjs().tz(TZ).toDate();
 
             const { error } = await supabase.from('meals').insert({
