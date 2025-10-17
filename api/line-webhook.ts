@@ -119,33 +119,33 @@ async function analyzeImage(imageUrl: string) {
 Return ONLY JSON matching:
 {"dish_name":"string","portion":"string","confidence":0.0}`;
 
-  // ---- START FIX ----
-  console.log(`[DEBUG] analyzeImage: Fetching image from ${imageUrl}`);
-  // 1. Fetch the image data from the public URL
-  const imageResponse = await fetch(imageUrl);
-  if (!imageResponse.ok) {
-    throw new Error(`Failed to fetch image from Supabase: ${imageResponse.status}`);
-  }
-  const imageBuffer = await imageResponse.arrayBuffer();
-  const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+  // ---- START FIX ----
+  console.log(`[DEBUG] analyzeImage: Fetching image from ${imageUrl}`);
+  // 1. Fetch the image data from the public URL
+  const imageResponse = await fetch(imageUrl);
+  if (!imageResponse.ok) {
+    throw new Error(`Failed to fetch image from Supabase: ${imageResponse.status}`);
+  }
+  const imageBuffer = await imageResponse.arrayBuffer();
+  const imageBase64 = Buffer.from(imageBuffer).toString('base64');
 
-  // 2. Construct the proper image part for Gemini
-  const imagePart = {
-    inlineData: {
-      data: imageBase64,
-      mimeType: 'image/jpeg', // Assuming all uploads are jpeg as per uploadToSupabase
-    },
-  };
+  // 2. Construct the proper image part for Gemini
+  const imagePart = {
+    inlineData: {
+      data: imageBase64,
+      mimeType: 'image/jpeg', // Assuming all uploads are jpeg as per uploadToSupabase
+    },
+  };
 
-  console.log('[DEBUG] analyzeImage: Calling Gemini with image...');
-  // 3. Update the generateContent call to send the image part
-  const result = await gemini.generateContent({
-    contents: [{ role: 'user', parts: [{ text: SYSTEM }, imagePart] }], // <-- Pass imagePart, not text
-  });
-  // ---- END FIX ----
+  console.log('[DEBUG] analyzeImage: Calling Gemini with image...');
+  // 3. Update the generateContent call to send the image part
+  const result = await gemini.generateContent({
+    contents: [{ role: 'user', parts: [{ text: SYSTEM }, imagePart] }], // <-- Pass imagePart, not text
+  });
+  // ---- END FIX ----
 
   const out = result.response.text().trim();
-  console.log('[DEBUG] analyzeImage: Gemini raw response:', out); // Added log
+  console.log('[DEBUG] analyzeImage: Gemini raw response:', out); // Added log
 
   const jsonText = out.startsWith('{') ? out : out.slice(out.indexOf('{'));
   try {
